@@ -106,17 +106,6 @@ scales.data %>%
                    exc_number %in% c(7, 11, 17, 23, 28) ~ "Ref/Syn Steady"
                    )) -> scales.data
 
-scales.data %>%
-  transform(sc_agreable = sc_agreable +1,
-            sc_appropriee = sc_appropriee +1,
-            sc_apaisante = sc_apaisante +1,
-            sc_variee = sc_variee + 1,
-            sc_coherente = sc_coherente + 1,
-            sc_caractere = sc_caractere + 1,
-            sc_habituelle = sc_habituelle + 1,
-            sc_niveau = sc_niveau + 1,
-            sc_emergence = sc_emergence + 1) -> scales.data
-
 # Collapsing data from conditions that appear twice by participant
 scales.data %>% 
   select(participant, sc_agreable, sc_appropriee, sc_variee, sc_apaisante, 
