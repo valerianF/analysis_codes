@@ -58,6 +58,44 @@ library(pvclust)
 font_import()
 loadfonts(device="win")
 
+# List used for plotting data
+
+
+plotTheme <- list(
+  theme_gdocs(),
+  theme(legend.position = 'none',
+          text=element_text(family="Helvetica"),
+          panel.grid.major.x = element_blank(),
+          axis.title.y = element_text(size=14, colour="black"),
+          axis.line = element_blank(),
+          axis.text.x = element_text(size=14, angle=90, colour="black"),
+          axis.text.y = element_text(size=14, colour="black")
+    ),
+scale_y_continuous(breaks=c(1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100),
+                   labels=c(1, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100),
+                   limits = c(0, 100)),
+  scale_color_manual(
+    "legend",
+    values = c("Resonated" = "#117AD7",
+               "Referential" = "#00B707",
+               "Synthesized" = "#C460E7",
+               "Baseline" = "#888888",
+               "Ref/Syn Fluctuating" = "#F583FF",
+               "Ref/Syn Steady" = "#D9BAE8",
+               "Ref/Res Fluctuating" = "#70ebd7"))
+)
+
+scalesPlotTheme = list(
+  scale_x_discrete(limits=c("sc_agreable", "sc_apaisante", "sc_niveau", 
+                            "sc_caractere", "sc_appropriee", "sc_habituelle",
+                            "sc_coherente",
+                            "sc_variee", "sc_emergence"),
+                   labels=c("Pleasant", "Soothing", "Sound Level",
+                            "Character", "Appropriate", "Familiar", "Coherent",
+                            "Varied", "Emergence"),
+  )
+)
+
 # Reading and parsing participants data
 scales.data <- read.csv(
   "scales.csv", 
@@ -72,8 +110,8 @@ scales.data %>%
     sound=case_when(
       exc_number == 1 | exc_number == 2 ~ "Baseline",
       exc_number == 3 ~ "O1",
-      exc_number == 4 ~ "R4",
-      exc_number == 5 ~ "O1R4F",
+      exc_number == 4 ~ "O1R4F",
+      exc_number == 5 ~ "R4",
       exc_number == 6 ~ "O1S2F",
       exc_number == 7 ~ "O1S2S",
       exc_number == 8 ~ "O2",
@@ -81,43 +119,43 @@ scales.data %>%
       exc_number == 10 ~ "O2S1F",
       exc_number == 11 ~ "O2S1S",
       exc_number == 12 ~ "O3",
-      exc_number == 13 ~ "R3",
-      exc_number == 14 ~ "O3R3F",
-      exc_number == 15 ~ "S1",
-      exc_number == 16 ~ "O3S1F",
-      exc_number == 17 ~ "O3S1S",
+      exc_number == 13 ~ "O3R3F",
+      exc_number == 14 ~ "R3",
+      exc_number == 15 ~ "O3S1F",
+      exc_number == 16 ~ "O3S1S",
+      exc_number == 17 ~ "S1",
       exc_number == 18 ~ "O4",
-      exc_number == 19 ~ "R1",
-      exc_number == 20 ~ "O4R1F",
-      exc_number == 21 ~ "S2",
-      exc_number == 22 ~ "O4S2F",
-      exc_number == 23 ~ "O4S2S",
+      exc_number == 19 ~ "O4R1F",
+      exc_number == 20 ~ "R1",
+      exc_number == 21 ~ "O4S2F",
+      exc_number == 22 ~ "O4S2S",
+      exc_number == 23 ~ "S2",
       exc_number == 24 ~ "O5",
-      exc_number == 25 ~ "R2",
-      exc_number == 26 ~ "O5R2F",
+      exc_number == 25 ~ "O5R2F",
+      exc_number == 26 ~ "R2",
       exc_number == 27 ~ "O5S2F",
       exc_number == 28 ~ "O5S2S"),
     type=case_when(exc_number %in% c(1,2) ~ "Baseline",
                    exc_number %in% c(3,8,12,18,24) ~ "Referential",
-                   exc_number %in% c(4,13,19,25) ~ "Resonated",
-                   exc_number %in% c(15,21) ~ "Synthesized",
-                   exc_number %in% c(5,9,14,20,26) ~ "Ref/Res Fluctuating",
-                   exc_number %in% c(6, 10, 16, 22, 27) ~ "Ref/Syn Fluctuating",
-                   exc_number %in% c(7, 11, 17, 23, 28) ~ "Ref/Syn Steady"
+                   exc_number %in% c(5,14,20,26) ~ "Resonated",
+                   exc_number %in% c(17,23) ~ "Synthesized",
+                   exc_number %in% c(4,9,13,19,25) ~ "Ref/Res Fluctuating",
+                   exc_number %in% c(6, 10, 15, 21, 27) ~ "Ref/Syn Fluctuating",
+                   exc_number %in% c(7, 11, 16, 22, 28) ~ "Ref/Syn Steady"
                    )) -> scales.data
 
 # Collapsing data from conditions that appear twice by participant
 scales.data %>% 
   select(participant, sc_agreable, sc_appropriee, sc_variee, sc_apaisante, 
          sc_coherente, sc_caractere, sc_habituelle, sc_niveau, sc_emergence,
-         sound, type, reason, id_order, age, familiarity) %>% 
+         sound, type, reason, age, familiarity) %>% 
   melt(id.vars=c(
     "type", "sound", "age", "familiarity", "reason", "participant"
     )) %>% 
   ddply(cbind(
     "type", "sound", "age", "familiarity", "reason", "participant", "variable"
     ),
-    summarize, mean = mean(value)) %>% 
+    summarize, mean = mean(value)) %>%
   dcast(
     formula = participant+reason+age+familiarity+sound+type~variable, 
     fun.aggregate=sum, 
@@ -131,17 +169,21 @@ scales.data$participant <- factor(scales.data$participant,
                                           "P13", "P14", "P15", "P16", "P17",
                                           "P18", "P19", "P20"))
 
+#### II.C.1: Participants ####
+
 #### II.D: Statistical Assumptions ####
 
 # Scales: Univariate normality
-for (col in 10:18) {
-  print(colnames(all.data[col]))
-  temp <- as.numeric(unlist(all.data[col]))
+
+for (col in 3:11) {
+  print(colnames(scales.data[col]))
+  temp <- as.numeric(unlist(scales.data[col]))
   print(shapiro.test(temp))
 }
 
 # Scales: Multivariate normality
-collapsed.data %>%
+
+scales.data %>%
   select(sc_agreable:sc_emergence) %>% 
   t() %>% 
   mshapiro.test()
@@ -355,14 +397,14 @@ pairwise.wilcox.test(collapsed.data.type.1$VARIED,
 
 # Effect size
 collapsed.data.type.1 %>% 
-  wilcox_effsize(PLEASANT ~ type, paired = TRUE, nboot=10000)
+  wilcox_effsize(PLEASANT ~ type, paired = TRUE)
 collapsed.data.type.1 %>% 
-  wilcox_effsize(VARIED ~ type, paired = TRUE, nboot=10000)
+  wilcox_effsize(VARIED ~ type, paired = TRUE)
 collapsed.data.type.1 %>% 
-  wilcox_effsize(FAMILIAR ~ type, paired = TRUE, nboot=10000)
+  wilcox_effsize(FAMILIAR ~ type, paired = TRUE)
 
 # Figure 7 - Left: Mean PCA component ratings by type
-collapsed.data.type %>% 
+collapsed.data.type.1 %>% 
   select(PLEASANT, FAMILIAR, VARIED, type) %>% 
   filter(type %in% c('Baseline', 'Referential', 'Resonated', 'Synthesized')) %>% 
   melt(id.vars=c("type")) %>% 
@@ -373,11 +415,15 @@ collapsed.data.type %>%
     x=variable,
     y=mean, 
     color=type, 
-    group=type)) +
-  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.3, size=1, position="dodge") +
-  geom_line(position = position_dodge(width = 0.3), size=1) +  # geom_line needs group in ggplot
+    group=type,
+    shape=type)) +
+  ylab("Mean and standard error") +
+  xlab("") +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.3, size=0.5, position="dodge") +
+  geom_line(position = position_dodge(width = 0.3), size=0.5, linetype = "dashed") +  # geom_line needs group in ggplot
   geom_point(position = position_dodge(width = 0.3), size=3) +
-  theme_gdocs() 
+  scale_shape_manual(values = c(17, 15, 16, 18)) +
+  plotTheme
 
 # Figure 7 - Right: Mean scale ratings by type
 collapsed.data %>% 
@@ -391,11 +437,16 @@ collapsed.data %>%
     x=variable,
     y=mean, 
     color=type, 
-    group=type)) +
-  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.3, size=1, position="dodge") +
-  geom_line(position = position_dodge(width = 0.3), size=1) +  # geom_line needs group in ggplot
+    group=type,
+    shape=type)) +
+  ylab("Mean and standard error") +
+  xlab("") +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.3, size=0.5, position="dodge") +
+  geom_line(position = position_dodge(width = 0.3), size=0.5, linetype = "dashed") +  # geom_line needs group in ggplot
   geom_point(position = position_dodge(width = 0.3), size=3) +
-  theme_gdocs() 
+  scale_shape_manual(values = c(17, 15, 16, 18)) +
+  plotTheme +
+  scalesPlotTheme
 
 #### III.C RM MANOVA: Abstract and referential composition strategies ####
 # Filtering Baseline, referential, resonated and synthesized compositions
@@ -465,16 +516,15 @@ pairwise.wilcox.test(collapsed.data.type.2$VARIED,
 
 # Effect size
 collapsed.data.type.2 %>% 
-  wilcox_effsize(PLEASANT ~ type, paired = TRUE, nboot=10000)
+  wilcox_effsize(PLEASANT ~ type, paired = TRUE)
 collapsed.data.type.2 %>% 
-  wilcox_effsize(VARIED ~ type, paired = TRUE, nboot=10000)
+  wilcox_effsize(VARIED ~ type, paired = TRUE)
 collapsed.data.type.2 %>% 
-  wilcox_effsize(FAMILIAR ~ type, paired = TRUE, nboot=10000)
+  wilcox_effsize(FAMILIAR ~ type, paired = TRUE)
 
 # Figure 8 - Left: Mean PCA component ratings by type
-collapsed.data.type %>% 
+collapsed.data.type.2 %>% 
   select(PLEASANT, FAMILIAR, VARIED, type) %>% 
-  filter( type %in% c("Referential", "Synthesized", "Resonated", "Ref/Syn Steady", "Ref/Syn Fluctuating", "Ref/Res Fluctuating")) %>% 
   melt(id.vars=c("type")) %>% 
   ddply(c('type', 'variable'), summarise,
         mean=mean(value, na.rm = T),
@@ -483,11 +533,15 @@ collapsed.data.type %>%
     x=variable,
     y=mean, 
     color=type, 
-    group=type)) +
-  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.3, size=1, position="dodge") +
-  geom_line(position = position_dodge(width = 0.3), size=1) +  # geom_line needs group in ggplot
+    group=type,
+    shape=type)) +
+  ylab("Mean and standard error") +
+  xlab("") +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.3, size=0.5, position="dodge") +
+  geom_line(position = position_dodge(width = 0.3), size=0.5, linetype = "dashed") +  # geom_line needs group in ggplot
   geom_point(position = position_dodge(width = 0.3), size=3) +
-  theme_gdocs() 
+  scale_shape_manual(values = c(8, 18, 25, 15, 16, 18)) +
+  plotTheme
 
 # Figure 8 - Right: Mean scale ratings by type
 collapsed.data %>% 
@@ -501,8 +555,13 @@ collapsed.data %>%
     x=variable,
     y=mean, 
     color=type, 
-    group=type)) +
-  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.3, size=1, position="dodge") +
-  geom_line(position = position_dodge(width = 0.3), size=1) +  # geom_line needs group in ggplot
+    group=type,
+    shape=type)) +
+  ylab("Mean and standard error") +
+  xlab("") +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=0.3, size=0.5, position="dodge") +
+  geom_line(position = position_dodge(width = 0.3), size=0.5, linetype = "dashed") +  # geom_line needs group in ggplot
   geom_point(position = position_dodge(width = 0.3), size=3) +
-  theme_gdocs() 
+  scale_shape_manual(values = c(8, 18, 25, 15, 16, 18)) +
+  plotTheme +
+  scalesPlotTheme
