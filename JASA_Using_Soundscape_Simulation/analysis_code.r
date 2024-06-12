@@ -20,7 +20,7 @@
 #### Initialization ####
 
 # Setting working directories
-setwd('XXX')
+setwd('D:\\Files\\OneDrive - McGill University\\Work\\Niches Acoustiques\\Lab Experiments\\Data analysis\\Listening test 1\\Analysis\\data\\')
 
 # Libraries
 library(ggplot2)
@@ -55,6 +55,7 @@ library(FactoClass)
 library(clValid)
 library(dendextend)
 library(pvclust)
+library(rmcorr)
 font_import()
 loadfonts(device="win")
 
@@ -104,6 +105,14 @@ scales.data <- read.csv(
   na.strings=c("NA", "Baseline", "O")
   )
 
+# Reading and parsing acoustic measurements data
+measurements <- read.csv(
+  "acoustic_measurements_excerpts.csv", 
+  header=T, 
+  sep=",", 
+  na.strings=c("NA", "N/A", "O")
+  )
+
 # Creating variables associated with the stimuli and stimuli groups nomenclature
 scales.data %>% 
   mutate( 
@@ -144,6 +153,27 @@ scales.data %>%
                    exc_number %in% c(7, 11, 16, 22, 28) ~ "Ref/Syn Steady"
                    )) -> scales.data
 
+measurements %>% 
+  mutate(
+    type=case_when(sound %in% c("N/A") ~ "Baseline",
+                   sound %in% c("O1", "O2", "O3", "O4", "O5") ~ "Referential",
+                   sound %in% c("R1", "R2", "R3", "R4") ~ "Resonated",
+                   sound %in% c("O1R4F", "O2R4F", "O3R3F", "O4R1F", "O5R2F") ~ "Ref/Res Fluctuating",
+                   sound %in% c("S1", "S2") ~ "Synthesized",
+                   sound %in% c("O1S2F", "O2S1F", "O3S1F", "O4S2F", "O5S2F") ~ "Ref/Syn Fluctuating",
+                   sound %in% c("O1S2S", "O2S1S", "O3S1S", "O4S2S", "O5S2S") ~ "Ref/Syn Steady")) -> measurements
+
+scales.data %>% # going from 0 to 99 to 1 to 100
+  transform(sc_agreable = sc_agreable +1,
+            sc_appropriee = sc_appropriee +1,
+            sc_apaisante = sc_apaisante +1,
+            sc_variee = sc_variee + 1,
+            sc_coherente = sc_coherente + 1,
+            sc_caractere = sc_caractere + 1,
+            sc_habituelle = sc_habituelle + 1,
+            sc_niveau = sc_niveau + 1,
+            sc_emergence = sc_emergence + 1) -> scales.data
+
 # Collapsing data from conditions that appear twice by participant
 scales.data %>% 
   select(participant, sc_agreable, sc_appropriee, sc_variee, sc_apaisante, 
@@ -169,7 +199,16 @@ scales.data$participant <- factor(scales.data$participant,
                                           "P13", "P14", "P15", "P16", "P17",
                                           "P18", "P19", "P20"))
 
-#### II.C.1: Participants ####
+
+#### II.B: Added sounds ####
+
+# Table I - Mean and SD of acoustic measurements, by composition type
+measurements %>% 
+  select(type, LAeq1min30s, LAFmax, LCpeakmax) %>% 
+  melt("type") %>% 
+  ddply(c("type", "variable"), summarize, 
+        mean = mean(value), sd = sd(value))
+
 
 #### II.D: Statistical Assumptions ####
 
@@ -318,7 +357,8 @@ collapsed.data %>%
   ddply(cbind('participant', 'type', 'variable'), summarise, mean = mean(value, na.rm=T)) %>% 
   dcast(formula = participant+type~variable, value.var='mean') -> collapsed.data.type
 
-# Table VIII - Median and IQR, by component
+
+# Table X - Median and IQR, by component
 collapsed.data.type %>% 
   select(PLEASANT, VARIED, FAMILIAR, type) %>%
   melt("type") %>% 
@@ -328,6 +368,19 @@ collapsed.data.type %>%
     median = median(value),
     IQR = IQR(value)
   ) 
+
+# TABLE VII Repeated measures correlations between acoustic measurements and components
+data.measurements <- merge(collapsed.data, measurements, by = "sound")
+
+rmcorr(participant, PLEASANT, LAeq1min30s, data.measurements)
+rmcorr(participant, FAMILIAR, LAeq1min30s, data.measurements)
+rmcorr(participant, VARIED, LAeq1min30s, data.measurements)
+
+rmcorr(participant, PLEASANT, LAFmax, data.measurements)
+rmcorr(participant, FAMILIAR, LAFmax, data.measurements)
+rmcorr(participant, VARIED, LAFmax, data.measurements)
+
+p.adjust(c(7.18e-06, 7.05e-05, 1.337e-06, 0.00033, 0.0607, 1.704e-11), method="holm")
 
 #### III.C RM MANOVA: Abstract and referential composition strategies ####
 # Filtering Baseline, referential, resonated and synthesized compositions
