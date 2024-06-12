@@ -20,7 +20,7 @@
 #### Initialization ####
 
 # Setting working directories
-setwd('D:\\Files\\OneDrive - McGill University\\Work\\Niches Acoustiques\\Lab Experiments\\Data analysis\\Listening test 1\\Analysis\\data\\')
+setwd('XXX')
 
 # Libraries
 library(ggplot2)
