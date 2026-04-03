@@ -1,0 +1,614 @@
+---
+title: "analysis_code"
+author: "Valérian Fraisse"
+date: "2026-03-17"
+output: html_document
+---
+
+Composing with acoustic niches: A laboratory soundscape evaluation of sound installation reactivity
+
+Valérian Fraisse
+
+The present code is the analysis code used on the listening tests reported 
+in the journal article 'Composing with acoustic niches: A laboratory soundscape evaluation 
+of sound installation reactivity' by Fraisse V., Schütz N., Vincent C., Wanderley M., Guastavino C., and Misdariis N., submitted to npj Acoustics. 
+
+
+The code is not functional per se as participants' data from the listening tests
+can't be shared online due to the nature of consent obtained
+from participants as per the ethics approval obtained from the McGill Research
+Ethics Board and the Sorbonne University Research Ethics Commitee. 
+
+Code sections are ordered according to the paper's sections they are 
+refering to.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+# Libraries
+
+# Libraries for data manipulation
+library(dplyr) # Pipes and data manipulation
+library(tidyr) # Data tidying
+library(reshape2) # melt, utility
+library(stringr) # string manipulation, utility
+library(plyr) # ddply, utility
+library(purrr) # map, utility
+library(forcats) # tiddy up categorical variables, utility
+
+# Libraries for statistical analysis
+library(psych) # PCA and other stats
+library(car) # Levene's test
+library(rstatix) # Wilcoxon effect size
+library(nlme) # Linear mixed models
+library(MANOVA.RM) # Repeated measures MANOVA
+library(mvnormtest) # Shapiro-Wilk multivariate normality tests
+library(lmerTest) # Linear mixed models with Satterthwaite's method for degrees of freedom
+
+# function to compute post-hoc, pairwise Wilcoxon tests
+pairwise_wilcox = function(df, var_cols, cond_col, p_method, ci=FALSE, nboot=1000)
+{
+  result <- data.frame()
+  for (col in var_cols) {
+    pairwise.wilcox.test(df[[col]],
+                         df[[cond_col]],
+                         paired = TRUE, 
+                         p.adjust.method = p_method,
+                         exact=TRUE) -> temp_w
+    
+    wilcox_effsize(df,
+                   as.formula(paste(colnames(df[col]), 
+                                    colnames(df[cond_col]), 
+                                    sep="~")), 
+                   paired = TRUE,                
+                   ci = ci,
+                   nboot = nboot) -> temp_es
+    
+    temp_vals <- na.omit(melt(temp_w$p.value, 
+                              value.name=paste("pval", p_method, sep="_")
+    ))
+    
+    temp_vals$item <- colnames(df[col])
+    temp_vals$effsize <- round(temp_es$effsize, 2)
+    
+    if (ci) {
+      temp_vals$effsize_cl <- temp_es$conf.low
+      temp_vals$effsize_ch <- temp_es$conf.high
+    }
+    
+    temp_vals$magnitude <- temp_es$magnitude
+    
+    result <- na.omit(bind_rows(result, temp_vals))
+  }
+  return(result)
+}
+
+# Function to test normality of pairwise differences
+test_difference_normality <- function(data, scales, condition_col, scenario_name) {
+  print(paste("Testing difference normality for:", scenario_name))
+  
+  conditions <- unique(data[[condition_col]])
+  condition_pairs <- combn(conditions, 2, simplify = FALSE)
+  
+  for(pair in condition_pairs) {
+    print(paste("Comparing:", pair[1], "vs", pair[2]))
+    
+    cond1_data <- data[data[[condition_col]] == pair[1], scales]
+    cond2_data <- data[data[[condition_col]] == pair[2], scales]
+    
+    # Calculate differences for each scale
+    for(scale in scales) {
+      if(nrow(cond1_data) > 0 && nrow(cond2_data) > 0) {
+        participants1 <- data[data[[condition_col]] == pair[1], "participant"]
+        participants2 <- data[data[[condition_col]] == pair[2], "participant"]
+        common_participants <- intersect(participants1, participants2)
+        
+        if(length(common_participants) > 3) {  # Need sufficient sample size
+          diff_scores <- cond1_data[participants1 %in% common_participants, scale] - 
+                        cond2_data[participants2 %in% common_participants, scale]
+          
+          # Shapiro-Wilk test on differences
+          if(length(diff_scores) > 3 && length(diff_scores) <= 5000) {
+            shapiro_result <- shapiro.test(diff_scores)
+            print(paste("  ", scale, "- Shapiro p-value:", round(shapiro_result$p.value, 4)))
+          }
+        }
+      }
+    }
+  }
+}
+
+# Function to test ANOVA residual normality
+test_anova_residual_normality <- function(data, scales, condition_col, subject_col, scenario_name) {
+  print(paste("Testing ANOVA residual normality for:", scenario_name))
+  
+  for(scale in scales) {
+    print(paste("Scale:", scale))
+    
+    # Fit linear mixed model to get residuals (equivalent to RM ANOVA)
+    formula_str <- paste(scale, "~", condition_col)
+    
+    tryCatch({
+      model <- lme(as.formula(formula_str), 
+                   random = as.formula(paste("~ 1 |", subject_col)), 
+                   data = data,
+                   na.action = na.omit)
+      
+      residuals <- residuals(model)
+      
+      if(length(residuals) > 3 && length(residuals) <= 5000) {
+        shapiro_result <- shapiro.test(residuals)
+        print(paste("  Shapiro p-value:", round(shapiro_result$p.value, 4)))
+        
+        ks_result <- ks.test(residuals, "pnorm", mean(residuals), sd(residuals))
+        print(paste("  KS p-value:", round(ks_result$p.value, 4)))
+      }
+      
+    }, error = function(e) {
+      print(paste("  Error fitting model for", scale, ":", e$message))
+    })
+  }
+}
+```
+
+## Tests for preliminary assumptions
+```{r assumptions, include=TRUE,  fig.width=10, fig.height=10}
+# Univariate normality
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  print(sce)
+  for (col in 11:18) {
+    temp <- as.numeric(unlist(filter(all.data, scenario == sce)[col]))
+    if (shapiro.test(temp)$p < .05) {
+      print(colnames(all.data[col]))
+      print(shapiro.test(temp))    
+    }
+  }}
+
+# Multivariate normality
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  print(sce) 
+  all.data %>%
+    filter(scenario == sce) %>% 
+    # select(so_trafic:so_autre) %>% 
+    select(sc_agreable:sc_emergence) %>%
+    t() %>% 
+    mshapiro.test() %>% 
+    print()
+}
+
+# Homogeneity of variance
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  print(sce)
+  for (col in 11:18) {
+    print(colnames(all.data[col]))
+    temp <- as.numeric(unlist(all.data[col]))
+    print(leveneTest(filter(all.data, scenario == sce)[[col]] 
+                     ~ filter(all.data, scenario == sce)[[19]], 
+                     data = filter(all.data, scenario == sce)))
+  }
+}
+
+# Homogeneity of covariance matrices
+# For soundscape scales
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  print(paste("Scenario:", sce))
+  scenario_data <- all.data %>% filter(scenario == sce)
+  
+  # Box's M test for soundscape scales
+  boxM_result <- boxM(scenario_data[, c("sc_agreable", "sc_apaisante", "sc_niveau", 
+                                       "sc_caractere", "sc_appropriee", "sc_coherente",
+                                       "sc_variee", "sc_emergence")], 
+                     scenario_data$condition)
+  print(boxM_result)
+}
+
+# For sound source scales  
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  print(paste("Scenario:", sce))
+  scenario_data <- all.data %>% filter(scenario == sce)
+  
+  # Box's M test for sound source scales
+  boxM_result <- boxM(scenario_data[, c("so_trafic", "so_passants", "so_nature", 
+                                       "so_music", "so_autre")], 
+                     scenario_data$condition)
+  print(boxM_result)
+}
+
+# Normality of group differences
+
+# For soundscape scales
+soundscape_scales <- c("sc_agreable", "sc_apaisante", "sc_niveau", 
+                      "sc_caractere", "sc_appropriee", "sc_coherente",
+                      "sc_variee", "sc_emergence")
+
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  scenario_data <- all.data %>% filter(scenario == sce)
+  test_difference_normality(scenario_data, soundscape_scales, "condition", sce)
+}
+
+# For sound source scales  
+source_scales <- c("so_trafic", "so_passants", "so_nature", "so_music", "so_autre")
+
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  scenario_data <- all.data %>% filter(scenario == sce)
+  test_difference_normality(scenario_data, source_scales, "condition", sce)
+}
+
+# Normality of residuals
+
+# Test for each scenario - soundscape scales
+
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  scenario_data <- all.data %>% filter(scenario == sce)
+  test_anova_residual_normality(scenario_data, soundscape_scales, "condition", "participant", sce)
+}
+
+# Test for sound source scales  
+source_scales <- c("so_trafic", "so_passants", "so_nature", "so_music", "so_autre")
+
+for (sce in c("Rush hour", "Afterwork", "Quiet time")) {
+  scenario_data <- all.data %>% filter(scenario == sce)
+  test_anova_residual_normality(scenario_data, source_scales, "condition", "participant", sce)
+}
+
+```
+
+## Loudness validation
+```{r loudness}
+lmm_loudness <- lmerTest::lmer(sc_niveau ~ loudness + scenario + (1 | participant),
+                      data = all.data)
+summary(lmm_loudness) 
+```
+
+## 2.1 Comparing Baseline Scenarios
+
+```{r analysis_scenarios, include=TRUE,  fig.width=12, fig.height=12}
+# Sound source dominance
+# 1 - RM MANOVA
+scenarios.data %>% 
+  multRM(formula = cbind(so_trafic, so_passants, so_nature,
+                         so_music, so_autre) ~ scenario, 
+         subject = "participant", 
+         within = "scenario",
+         iter = 10000, 
+         resampling = "WildBS", seed = 1234) %>% 
+  summary()
+
+# 2 - Follow-up semi-parametric RM Anova
+p_vals <- c()
+items <- c()
+ATS <- c()
+for (col in 6:10) {
+  items <- append(items, colnames(scenarios.data[col]))
+  RM(data=scenarios.data, 
+     formula = scenarios.data[[col]] ~ scenario, 
+     subject = "participant", 
+     within = "scenario",
+     iter = 10000, 
+     resampling = "WildBS", seed = 1234) -> temp_RM 
+  ATS <- append(ATS, temp_RM$ATS[1])
+  p_vals <- append(p_vals, temp_RM$resampling[2])
+}
+
+scenarios_sources_RM_ANOVA <- data.frame("item" = items, 
+                             "ATS" = ATS, 
+                             "p-value_BH" = p.adjust(p_vals, "BH"))
+
+# 3 - Post-hoc Wilcoxon tests
+sources_wilcox <- pairwise_wilcox(scenarios.data,
+                                c(6,7), 
+                                22, 
+                                "BH",
+                                ci=TRUE,
+                                nboot=5000)
+
+# Soundscape scales
+# 0 - Filtering Baseline scenarios
+scenarios.data = filter(
+  all.data, 
+  condition == "Baseline scenario"
+)
+
+# 1 - RM MANOVA
+scenarios.data %>% 
+  multRM(formula = cbind(sc_agreable, sc_apaisante, sc_appropriee,
+                         sc_variee, sc_coherente, sc_caractere,
+                         sc_niveau, sc_emergence) ~ scenario, 
+         subject = "participant", 
+         within = "scenario",
+         iter = 10000, 
+         resampling = "WildBS", seed = 1234) %>% 
+  summary()
+
+# 2 - Follow-up semi-parametric RM Anova
+p_vals <- c()
+items <- c()
+ATS <- c()
+for (col in 11:18) {
+  items <- append(items, colnames(scenarios.data[col]))
+  RM(data=scenarios.data, 
+     formula = scenarios.data[[col]] ~ scenario, 
+     subject = "participant", 
+     within = "scenario",
+     iter = 10000, 
+     resampling = "WildBS", seed = 1234) -> temp_RM 
+  ATS <- append(ATS, temp_RM$ATS[1])
+  p_vals <- append(p_vals, temp_RM$resampling[2])
+}
+
+scenarios_RM_ANOVA <- data.frame("item" = items, 
+                             "ATS" = ATS, 
+                             "p-value_BH" = p.adjust(p_vals, "BH"))
+
+# 3 - Post-hoc Wilcoxon tests
+scenarios_wilcox <- pairwise_wilcox(scenarios.data,
+                                c(11,12,14,16,17), 
+                                22, 
+                                "BH",
+                                ci=TRUE,
+                                nboot=5000)
+```
+
+## 2.2 Rush hour Scenario
+
+```{r analysis_soundscape_vs_scenarios_rushhour, include=TRUE,  fig.width=12, fig.height=12}
+# 0 - Filtering scenario
+rush_hour.data = filter(
+  all.data, 
+  scenario == "Rush hour"
+)
+
+# Sound source dominance
+# 1 - RM MANOVA
+rush_hour.data %>% 
+  multRM(formula = cbind(so_trafic, so_passants, so_nature, so_music, so_autre) ~ condition, 
+         subject = "participant", 
+         within = "condition",
+         iter = 10000, 
+         resampling = "WildBS", seed = 1234) %>% 
+  summary()
+
+# 2 - Follow-up semi-parametric RM Anova
+p_vals <- c()
+items <- c()
+ATS <- c()
+for (col in 6:10) {
+  items <- append(items, colnames(rush_hour.data[col]))
+  RM(data=rush_hour.data, 
+     formula = rush_hour.data[[col]] ~ condition, 
+     subject = "participant", 
+     within = "condition",
+     iter = 10000, 
+     resampling = "WildBS", seed = 1234) -> temp_RM 
+  ATS <- append(ATS, temp_RM$ATS[1])
+  p_vals <- append(p_vals, temp_RM$resampling[2])
+}
+
+rush_hour_sources_RM_ANOVA <- data.frame("item" = items, 
+                             "ATS" = ATS, 
+                             "p-value_BH" = p.adjust(p_vals, "BH"))
+
+# 3 - Post-hoc Wilcoxon tests
+rush_hour_sources_wilcox <- pairwise_wilcox(rush_hour.data,
+                                c(7,8,9,10), 
+                                19, 
+                                "BH",
+                                ci=TRUE,
+                                nboot=5000)
+# Soundscape scales
+# 1 - RM MANOVA
+rush_hour.data %>% 
+  multRM(formula = cbind(sc_agreable, sc_apaisante, sc_appropriee,
+                         sc_variee, sc_coherente, sc_caractere,
+                         sc_niveau, sc_emergence) ~ condition, 
+         subject = "participant", 
+         within = "condition",
+         iter = 10000, 
+         resampling = "WildBS", seed = 1234) %>% 
+  summary()
+
+# 2 - Follow-up semi-parametric RM Anova
+p_vals <- c()
+items <- c()
+ATS <- c()
+for (col in 11:18) {
+  items <- append(items, colnames(rush_hour.data[col]))
+  RM(data=rush_hour.data, 
+     formula = rush_hour.data[[col]] ~ condition, 
+     subject = "participant", 
+     within = "condition",
+     iter = 10000, 
+     resampling = "WildBS", seed = 1234) -> temp_RM 
+  ATS <- append(ATS, temp_RM$ATS[1])
+  p_vals <- append(p_vals, temp_RM$resampling[2])
+}
+
+rush_hour_RM_ANOVA <- data.frame("item" = items, 
+                             "ATS" = ATS,
+                             "p-value_BH" = p.adjust(p_vals, "BH"))
+
+# 3 - Post-hoc Wilcoxon tests
+rush_hour_wilcox <- pairwise_wilcox(rush_hour.data,
+                                c(13, 14,15,16,18), 
+                                19, 
+                                "BH",
+                                ci=TRUE,
+                                nboot=5000)
+```
+
+## 2.3 Afterwork Scenario
+
+```{r analysis_soundscape_vs_scenarios_afterwork, include=TRUE,  fig.width=13, fig.height=12}
+# 0 - Filtering scenario
+afterwork.data = filter(
+  all.data, 
+  scenario == "Afterwork"
+)
+
+# Sound sources
+# 1 - RM MANOVA
+afterwork.data %>% 
+  multRM(formula = cbind(so_trafic, so_passants, so_nature, so_music, so_autre) ~ condition, 
+         subject = "participant", 
+         within = "condition",
+         iter = 10000, 
+         resampling = "WildBS", seed = 1234) %>% 
+  summary()
+
+# 2 - Follow-up semi-parametric RM Anova
+p_vals <- c()
+items <- c()
+ATS <- c()
+for (col in 6:10) {
+  items <- append(items, colnames(afterwork.data[col]))
+  RM(data=afterwork.data, 
+     formula = afterwork.data[[col]] ~ condition, 
+     subject = "participant", 
+     within = "condition",
+     iter = 10000, 
+     resampling = "WildBS", seed = 1234) -> temp_RM 
+  ATS <- append(ATS, temp_RM$ATS[1])
+  p_vals <- append(p_vals, temp_RM$resampling[2])
+}
+
+afterwork_sources_RM_ANOVA <- data.frame("item" = items, 
+                             "ATS" = ATS, 
+                             "p-value_BH" = p.adjust(p_vals, "BH"))
+
+# 3 - Post-hoc Wilcoxon tests
+afterwork_sources_wilcox <- pairwise_wilcox(afterwork.data,
+                                c(6,7,8,9,10), 
+                                19, 
+                                "BH",
+                                ci=TRUE,
+                                nboot=5000)
+
+# Soundscape scales
+# 1 - RM MANOVA
+afterwork.data %>% 
+  multRM(formula = cbind(sc_agreable, sc_apaisante, sc_appropriee,
+                         sc_variee, sc_coherente, sc_caractere,
+                         sc_niveau, sc_emergence) ~ condition, 
+         subject = "participant", 
+         within = "condition",
+         iter = 10000, 
+         resampling = "WildBS", seed = 1234) %>% 
+  summary()
+
+# 2 - Follow-up semi-parametric RM Anova
+p_vals <- c()
+items <- c()
+ATS <- c()
+for (col in 11:18) {
+  items <- append(items, colnames(afterwork.data[col]))
+  RM(data=afterwork.data, 
+     formula = afterwork.data[[col]] ~ condition, 
+     subject = "participant", 
+     within = "condition",
+     iter = 10000, 
+     resampling = "WildBS", seed = 1234) -> temp_RM 
+  ATS <- append(ATS, temp_RM$ATS[1])
+  p_vals <- append(p_vals, temp_RM$resampling[2])
+}
+
+afterwork_RM_ANOVA <- data.frame("item" = items, 
+                             "ATS" = ATS, 
+                             "p-value_BH" = p.adjust(p_vals, "BH"))
+
+# 3 - Post-hoc Wilcoxon tests
+afterwork_wilcox <- pairwise_wilcox(afterwork.data,
+                                c(13,14,15,16), 
+                                19, 
+                                "BH",
+                                ci=TRUE,
+                                nboot=5000)
+```
+
+## 2.4 Quiet time Scenario
+
+```{r analysis_soundscape_vs_scenarios_quiettime, include=TRUE,  fig.width=12, fig.height=12}
+
+# 0 - Filtering scenario
+quiet_time.data = filter(
+  all.data, 
+  scenario == "Quiet time"
+)
+
+# Sound sources
+# 1 - RM MANOVA
+quiet_time.data %>% 
+  multRM(formula = cbind(so_trafic, so_passants, so_nature, so_music, so_autre) ~ condition, 
+         subject = "participant", 
+         within = "condition",
+         iter = 10000, 
+         resampling = "WildBS", seed = 1234) %>% 
+  summary()
+
+# 2 - Follow-up semi-parametric RM Anova
+p_vals <- c()
+items <- c()
+ATS <- c()
+for (col in 6:10) {
+  items <- append(items, colnames(quiet_time.data[col]))
+  RM(data=quiet_time.data, 
+     formula = quiet_time.data[[col]] ~ condition, 
+     subject = "participant", 
+     within = "condition",
+     iter = 10000, 
+     resampling = "WildBS", seed = 1234) -> temp_RM 
+  ATS <- append(ATS, temp_RM$ATS[1])
+  p_vals <- append(p_vals, temp_RM$resampling[2])
+}
+
+quiet_time_sources_RM_ANOVA <- data.frame("item" = items, 
+                             "ATS" = ATS, 
+                             "p-value_BH" = p.adjust(p_vals, "BH"))
+
+# 3 - Post-hoc Wilcoxon tests
+quiet_time_sources_wilcox <- pairwise_wilcox(quiet_time.data,
+                                c(6,7,8,9,10), 
+                                19, 
+                                "BH",
+                                ci=TRUE,
+                                nboot=5000)
+
+# Soundscape scales
+# 1 - RM MANOVA
+quiet_time.data %>% 
+  multRM(formula = cbind(sc_agreable, sc_apaisante, sc_appropriee,
+                         sc_variee, sc_coherente, sc_caractere,
+                         sc_niveau, sc_emergence) ~ condition, 
+         subject = "participant", 
+         within = "condition",
+         iter = 10000, 
+         resampling = "WildBS", seed = 1234) %>% 
+  summary()
+
+# 2 - Follow-up semi-parametric RM Anova
+p_vals <- c()
+items <- c()
+ATS <- c()
+for (col in 11:18) {
+  items <- append(items, colnames(quiet_time.data[col]))
+  RM(data=quiet_time.data, 
+     formula = quiet_time.data[[col]] ~ condition, 
+     subject = "participant", 
+     within = "condition",
+     iter = 10000, 
+     resampling = "WildBS", seed = 1234) -> temp_RM 
+  ATS <- append(ATS, temp_RM$ATS[1])
+  p_vals <- append(p_vals, temp_RM$resampling[2])
+}
+
+quiet_time_RM_ANOVA <- data.frame("item" = items, 
+                             "ATS" = ATS, 
+                             "p-value_BH" = p.adjust(p_vals, "BH"))
+
+# 3 - Post-hoc Wilcoxon tests
+quiet_time_wilcox <- pairwise_wilcox(quiet_time.data,
+                                c(11,12,14,16,18), 
+                                19, 
+                                "BH",
+                                ci=TRUE,
+                                nboot=5000)
+```
